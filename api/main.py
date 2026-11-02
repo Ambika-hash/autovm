@@ -1,16 +1,3 @@
-"""FastAPI REST API for the Cloud Right-Sizing Advisor.
-
-Endpoints
-  GET  /health            liveness + model/data status
-  GET  /recommendations   filtered list of right-sizing recommendations
-  GET  /summary           fleet-level spend / savings / risk summary
-  POST /ingest            add or replace VM metrics, then recompute recommendations
-
-The API is READ-ONLY with respect to your cloud: it never resizes anything.
-Every recommendation carries requires_human_review = true.
-
-Run:  uvicorn api.main:app --reload --port 8000
-"""
 from __future__ import annotations
 
 import json
@@ -22,12 +9,15 @@ from typing import Literal, Optional
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 from model.recommender import (
-    DATA_PATH, TIER_BY_NAME, ArtifactsMissingError, get_engine, load_metrics_csv,
+    DATA_PATH,
+    TIER_BY_NAME,
+    ArtifactsMissingError,
+    get_engine,
+    load_metrics_csv,
     summarize,
 )
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 app = FastAPI(
     title="Cloud Right-Sizing Advisor API",
@@ -40,7 +30,7 @@ _cache: dict = {"mtime": None, "recs": None}
 
 
 def _records(df: pd.DataFrame) -> list[dict]:
-    return json.loads(df.to_json(orient="records"))      # NaN -> null, numpy -> python
+    return json.loads(df.to_json(orient="records"))  # NaN -> null, numpy -> python
 
 
 def _current_recs() -> pd.DataFrame:
@@ -48,7 +38,10 @@ def _current_recs() -> pd.DataFrame:
     try:
         mtime = os.path.getmtime(DATA_PATH)
     except FileNotFoundError:
-        raise HTTPException(404, "No metrics data found. Run `python scripts/generate_data.py` or POST /ingest.")
+        raise HTTPException(
+            404,
+            "No metrics data found. Run `python scripts/generate_data.py` or POST /ingest.",
+        )
     with _lock:
         if _cache["recs"] is None or _cache["mtime"] != mtime:
             try:
@@ -65,6 +58,7 @@ def _current_recs() -> pd.DataFrame:
 class MetricRecord(BaseModel):
     """One metrics window for one VM. Extra columns are accepted; the maxima
     (maximum_usage_*) are optional and are NEVER used as model inputs."""
+
     model_config = ConfigDict(extra="allow")
 
     vm_id: str = Field(min_length=1)
@@ -131,8 +125,15 @@ def recommendations(
         recs = recs[recs["risk_level"] == risk_level]
     if vm_id:
         recs = recs[recs["vm_id"] == vm_id]
-    recs = recs[(recs["confidence"] >= min_confidence) & (recs["failure_risk"] <= max_failure_risk)]
-    return {"count": len(recs), "requires_human_review": True, "recommendations": _records(recs)}
+    recs = recs[
+        (recs["confidence"] >= min_confidence)
+        & (recs["failure_risk"] <= max_failure_risk)
+    ]
+    return {
+        "count": len(recs),
+        "requires_human_review": True,
+        "recommendations": _records(recs),
+    }
 
 
 @app.get("/summary")
@@ -148,7 +149,9 @@ def ingest(req: IngestRequest) -> dict:
             combined = pd.concat([load_metrics_csv(DATA_PATH), new], ignore_index=True)
         else:
             combined = new
-        combined["timestamp"] = pd.to_datetime(combined["timestamp"], utc=True).dt.tz_convert(None)
+        combined["timestamp"] = pd.to_datetime(
+            combined["timestamp"], utc=True
+        ).dt.tz_convert(None)
         combined = combined.drop_duplicates(["vm_id", "timestamp"], keep="last")
 
         # Validate by actually running the engine BEFORE committing to disk.

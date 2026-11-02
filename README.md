@@ -10,7 +10,7 @@ buffer - with the monthly saving, a confidence score, a failure-risk score and a
 ## Quick start
 
 ```bash
-pip install -r requirements.txt            # Python 3.10
+pip install -r requirements.txt            # Python 3.13
 python scripts/generate_data.py            # 15 over-provisioned demo VMs, 30 days
 python -m model.train                      # trains + saves models to artifacts/
 streamlit run dashboard/app.py             # dashboard  -> http://localhost:8501
@@ -76,7 +76,7 @@ vm_metrics.csv --> engineer features --> Random Forests --> p99 predicted peak
 |---|---|
 | `GET /health` | status of models and data |
 | `GET /recommendations` | filters: `action` (downsize/keep/upsize), `risk_level`, `min_confidence`, `max_failure_risk`, `vm_id` |
-| `GET /summary` | spend, potential savings, counts by action and risk level |
+| `GET /summary` | spend, net savings after upsize costs, counts by action and risk level |
 | `POST /ingest` | `{"records": [...], "mode": "append" \| "replace"}`; validated by running the model before anything is saved |
 
 Required fields per record: `vm_id`, `timestamp`, `instance_type`, `resource_request_cpus`,
@@ -85,6 +85,7 @@ CPU and memory values are fractions of the largest machine (32 cores / 128 GB). 
 (`priority`, `scheduling_class`, `collection_type`, `cpu_usage_distribution_mean/std`, `duration`,
 `cycles_per_instruction`, `memory_accesses_per_instruction`) fall back to training-set medians.
 `maximum_usage_*` may be included for charting but is never used as a model input.
+Fleet-level monthly and annual savings are net amounts: upsize cost increases offset savings from downsized VMs.
 
 ```bash
 curl "localhost:8000/recommendations?action=downsize&risk_level=LOW"
@@ -112,4 +113,5 @@ dashboard/app.py           Streamlit + Plotly     Dockerfile, start.sh  containe
   then retrain: `python -m model.train` (the training data needs the `maximum_usage_*` targets).
 - The failure model is trained on the `failed` column; if you have no such label, it falls back to a
   prior-only classifier and failure risk becomes a constant - treat it accordingly.
-- Re-train regularly; saved models are pickles and must be loaded with the pinned scikit-learn version.
+- Re-train after changing scikit-learn versions and regularly thereafter; saved models are pickles and
+  must be loaded with the version of scikit-learn that trained them.
